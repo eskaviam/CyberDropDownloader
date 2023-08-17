@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import json
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Tuple, Optional
 
@@ -290,6 +292,22 @@ class XenforoCrawler:
     async def parse_forum(self, session: ScrapeSession, url: URL, spec: ParseSpec, cascade: CascadeItem,
                           title: str, post_number: int) -> str:
         """Parses forum threads"""
+                
+        conf_file_path = '/content/conf.json'
+        conf_data = {
+            "stop_on_page": 6
+        }
+        if os.path.exists(conf_file_path):
+            with open(conf_file_path, 'r') as conf_file:
+                conf_data = json.load(conf_file)
+        else:
+            with open(conf_file_path, 'w') as conf_file:
+                json.dump(conf_data, conf_file, indent=4)
+            print(f"Created {conf_file_path} with default configuration")
+            return title
+                
+        stop_on_page = conf_data.get('stop_on_page')
+        
         soup = await session.get_BS4(url)
         continue_scrape = True
 
@@ -303,6 +321,13 @@ class XenforoCrawler:
             for elem in title_block.find_all(spec.title_clutter_tag):
                 elem.decompose()
             title = await make_title_safe(title_block.text.replace("\n", "").strip())
+
+        current_page = 1
+        if 'page-' in url.raw_name:
+            current_page = int(url.raw_name.split('-')[-1])
+        
+        logger.debug("Current page: %s", current_page)
+        log(f"Current page: {current_page}", quiet=self.quiet, style="green")
 
         posts = soup.select(spec.posts_block_tag)
 
@@ -361,6 +386,11 @@ class XenforoCrawler:
         external_links = [x for x in content_links if x not in direct_links]
         await self.handle_direct_links(cascade, direct_links, url, spec.domain)
         await self.handle_external_links(external_links, url)
+
+        if stop_on_page is not None and current_page > stop_on_page:
+            log(f"Reached stop_on_page: {stop_on_page}", quiet=self.quiet, style="green")
+            print(title)
+            return title
 
         next_page = soup.select_one(spec.next_page_tag)
         if next_page is not None and continue_scrape:
