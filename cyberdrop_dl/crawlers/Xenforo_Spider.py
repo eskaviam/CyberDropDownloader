@@ -329,6 +329,11 @@ class XenforoCrawler:
         logger.debug("Current page: %s", current_page)
         log(f"Current page: {current_page}", quiet=self.quiet, style="green")
 
+        if stop_on_page is not None and current_page > stop_on_page:
+            log(f"Reached stop_on_page: {stop_on_page}", quiet=self.quiet, style="green")
+            print(title)
+            return title
+
         posts = soup.select(spec.posts_block_tag)
 
         for post in posts:
@@ -386,11 +391,6 @@ class XenforoCrawler:
         external_links = [x for x in content_links if x not in direct_links]
         await self.handle_direct_links(cascade, direct_links, url, spec.domain)
         await self.handle_external_links(external_links, url)
-
-        if stop_on_page is not None and current_page > stop_on_page:
-            log(f"Reached stop_on_page: {stop_on_page}", quiet=self.quiet, style="green")
-            print(title)
-            return title
 
         next_page = soup.select_one(spec.next_page_tag)
         if next_page is not None and continue_scrape:
