@@ -36,7 +36,7 @@ class BunkrCrawler:
         self.primary_base_domain = URL("https://bunkrr.su")
         self.api_link = URL(f"https://api-v2.{self.primary_base_domain.host}")
 
-    async def set_cookie(self, session, ddg1, ddg2, ddgid):
+    async def set_cookie(self, session, ddg1, ddg2, ddg5, ddgid, ddgmark):
         """Sets the given tokens as cookies into the session (and client)"""
         cookie_domain = 'bunkrr.su'
         
@@ -49,15 +49,25 @@ class BunkrCrawler:
         cookie_ddg2['domain'] = cookie_domain
         cookie_ddg2.set('__ddg2_', ddg2, ddg2)
 
+        cookie_ddg2 = http.cookies.Morsel()
+        cookie_ddg2['domain'] = cookie_domain
+        cookie_ddg2.set('__ddg5_', ddg5, ddg5)
+
         cookie_ddgid = http.cookies.Morsel()
         cookie_ddgid['domain'] = cookie_domain
         cookie_ddgid.set('__ddgid_', ddgid, ddgid)
+
+        cookie_ddgid = http.cookies.Morsel()
+        cookie_ddgid['domain'] = cookie_domain
+        cookie_ddgid.set('__ddgmark_', ddgmark, ddgmark)
 
         # Update the cookie jar with the new cookies
         session.client_session.cookie_jar.update_cookies({
             cookie_domain: cookie_ddg1,
             cookie_domain: cookie_ddg2,
-            cookie_domain: cookie_ddgid
+            cookie_domain: cookie_ddg3,
+            cookie_domain: cookie_ddgid,
+            cookie_domain: cookie_ddgmark,
         })
 
 
@@ -76,10 +86,12 @@ class BunkrCrawler:
 
         ddg1 = conf_data.get('bunkrr_ddg1')
         ddg2 = conf_data.get('bunkrr_ddg2')
+        ddg5 = conf_data.get('bunkrr_ddg5')
         ddgid = conf_data.get('bunkrr_ddgid')
+        ddgmark = conf_data.get('bunkrr_ddgmark')
         
         # You need to call the set_cookie function with the session parameter and the values for ddg1, ddg2, and ddgid
-        await self.set_cookie(session, ddg1, ddg2, ddgid)
+        await self.set_cookie(session, ddg1, ddg2, ddg5, ddgid, ddgmark)
 
         url = await self.get_stream_link(url)
 
