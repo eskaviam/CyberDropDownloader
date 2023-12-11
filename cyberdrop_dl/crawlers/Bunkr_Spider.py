@@ -36,10 +36,50 @@ class BunkrCrawler:
         self.primary_base_domain = URL("https://bunkrr.su")
         self.api_link = URL(f"https://api-v2.{self.primary_base_domain.host}")
 
-    async def fetch(self, session: ScrapeSession, url: URL) -> AlbumItem:
+    async def set_cookie(self, session, ddg1, ddg2, ddgid):
+        """Sets the given tokens as cookies into the session (and client)"""
+        cookie_domain = 'bunkrr.su'
+        
+        # Create separate cookies for each key
+        cookie_ddg1 = http.cookies.Morsel()
+        cookie_ddg1['domain'] = cookie_domain
+        cookie_ddg1.set('__ddg1_', ddg1, ddg1)
+
+        cookie_ddg2 = http.cookies.Morsel()
+        cookie_ddg2['domain'] = cookie_domain
+        cookie_ddg2.set('__ddg2_', ddg2, ddg2)
+
+        cookie_ddgid = http.cookies.Morsel()
+        cookie_ddgid['domain'] = cookie_domain
+        cookie_ddgid.set('__ddgid_', ddgid, ddgid)
+
+        # Update the cookie jar with the new cookies
+        session.client_session.cookie_jar.update_cookies({
+            cookie_domain: cookie_ddg1,
+            cookie_domain: cookie_ddg2,
+            cookie_domain: cookie_ddgid
+        })
+
+
+
+    async def fetch(self, session, url):
         """Scraper for Bunkr"""
         album_obj = AlbumItem("Loose Bunkr Files", [])
         log(f"Starting: {url}", quiet=self.quiet, style="green")
+        conf_file_path = '/content/conf.json'
+        if os.path.exists(conf_file_path):
+            with open(conf_file_path, 'r') as conf_file:
+                conf_data = json.load(conf_file)
+        else:
+            print("No config file found")
+            return
+
+        ddg1 = conf_data.get('bunkrr_ddg1')
+        ddg2 = conf_data.get('bunkrr_ddg2')
+        ddgid = conf_data.get('bunkrr_ddgid')
+        
+        # You need to call the set_cookie function with the session parameter and the values for ddg1, ddg2, and ddgid
+        await self.set_cookie(session, ddg1, ddg2, ddgid)
 
         url = await self.get_stream_link(url)
 
