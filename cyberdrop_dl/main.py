@@ -343,7 +343,6 @@ async def director(args: Dict, links: List) -> None:
 
         log('Finished downloading. Enjoy :)')
 
-    await check_outdated(client)
     log("\nIf you enjoy using this program, please consider buying the developer a coffee :)"
         "\nhttps://www.buymeacoffee.com/juleswinnft", style="green")
 
