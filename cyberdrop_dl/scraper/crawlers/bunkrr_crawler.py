@@ -102,17 +102,40 @@ class BunkrrCrawler(Crawler):
 
         async with self.request_limiter:
             soup = await self.client.get_BS4(self.domain, scrape_item.url)
-        link_container = soup.select("a[class*=ic-download-01]")[-1]
+        
+        # Try multiple selectors to find the download link
+        link_container = None
+        selectors = [
+            "a[class*=ic-download-01]",
+            "a[href*='get.bunkrr.su/file/']",
+            "a[class*='btn-main'][href*='get.bunkrr']",
+            "a[class*='download']",
+            "a[href*='.mp4']"
+        ]
+        
+        for selector in selectors:
+            links = soup.select(selector)
+            if links:
+                link_container = links[-1]
+                break
+                
+        if not link_container:
+            self.manager.logger.error(f"Could not find download link for {scrape_item.url}")
+            return
+            
         link = URL(link_container.get('href'))
 
         try:
             filename, ext = await get_filename_and_ext(link.name)
         except NoExtensionFailure:
             try:
-                link_container = soup.select_one("source")
-                link = URL(link_container.get('src'))
-                filename, ext = await get_filename_and_ext(link.name)
-            except NoExtensionFailure:
+                source_element = soup.select_one("source")
+                if source_element:
+                    link = URL(source_element.get('src'))
+                    filename, ext = await get_filename_and_ext(link.name)
+                else:
+                    raise NoExtensionFailure()
+            except (NoExtensionFailure, AttributeError):
                 if "get" in link.host:
                     link = await self.reinforced_link(link)
                     if not link:
@@ -133,7 +156,30 @@ class BunkrrCrawler(Crawler):
 
         async with self.request_limiter:
             soup = await self.client.get_BS4(self.domain, scrape_item.url)
-        link_container = soup.select('a[class*="text-white inline-flex"]')[-1]
+
+        link_container = None
+        selectors = [
+            'a[class*="text-white inline-flex"]',
+            'a[class*="btn btn-seco-outline"]',
+            'a[class*="ic-expand-06"]',
+            'a[class*="ic-download"]',
+            'a[href*=".jpg"]',
+            'a[href*=".png"]',
+            'a[href*=".gif"]',
+            'a[href*=".mp4"]',
+            'a[download]'
+        ]
+        
+        for selector in selectors:
+            links = soup.select(selector)
+            if links:
+                link_container = links[-1]
+                break
+                
+        if not link_container:
+            self.manager.logger.error(f"Could not find download link for {scrape_item.url}")
+            return
+            
         link = URL(link_container.get('href'))
 
         try:

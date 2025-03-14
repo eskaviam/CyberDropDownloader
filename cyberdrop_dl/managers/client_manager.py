@@ -108,9 +108,20 @@ class ClientManager:
         except ValueError:
             phrase = "Unknown"
 
-        response_text = await response.text()
-        if "<title>DDoS-Guard</title>" in response_text:
-            raise DDOSGuardFailure(status="DDOS-Guard", message="DDoS-Guard detected")
+        try:
+            response_text = await response.text()
+            if "<title>DDoS-Guard</title>" in response_text:
+                raise DDOSGuardFailure(status="DDOS-Guard", message="DDoS-Guard detected")
+        except UnicodeDecodeError:
+            # Handle binary or non-UTF-8 encoded responses
+            try:
+                # Try with a more lenient encoding that replaces invalid characters
+                response_text = await response.text(encoding='utf-8', errors='replace')
+                if "<title>DDoS-Guard</title>" in response_text:
+                    raise DDOSGuardFailure(status="DDOS-Guard", message="DDoS-Guard detected")
+            except Exception:
+                # If all else fails, just continue without checking for DDoS-Guard
+                pass
 
         if not headers.get('Content-Type'):
             raise DownloadFailure(status=CustomHTTPStatus.IM_A_TEAPOT, message="No content-type in response header")

@@ -28,7 +28,7 @@ async def get_db_path(url: URL, referer: str = "") -> str:
 async def get_db_domain(domain: str) -> str:
     """Gets the domain to be put into the DB and checked from the DB"""
     if domain in ("img.kiwi", "jpg.church", "jpg.homes", "jpg.fish", "jpg.fishing", "jpg.pet", "jpeg.pet", "jpg1.su",
-                  "jpg2.su", "jpg3.su"):
+                  "jpg2.su", "jpg3.su", "jpg4.su", "jpg5.su"):
         domain = "sharex"
     return domain
 

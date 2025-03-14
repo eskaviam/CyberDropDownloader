@@ -91,7 +91,11 @@ class ScraperClient:
             assert content_type is not None
             if not any(s in content_type.lower() for s in ("html", "text")):
                 raise InvalidContentTypeFailure(message=f"Received {content_type}, was expecting text")
-            text = await response.text()
+            try:
+                text = await response.text()
+            except UnicodeDecodeError:
+                # Handle binary or non-UTF-8 encoded responses
+                text = await response.text(encoding='utf-8', errors='replace')
             return BeautifulSoup(text, 'html.parser')
 
     @limiter
@@ -117,7 +121,11 @@ class ScraperClient:
                 raise InvalidContentTypeFailure(
                     message=f"Received {content_type}, was expecting text"
                 )
-            text = await response.text()
+            try:
+                text = await response.text()
+            except UnicodeDecodeError:
+                # Handle binary or non-UTF-8 encoded responses
+                text = await response.text(encoding='utf-8', errors='replace')
             return BeautifulSoup(text, "html.parser")
 
     @limiter
@@ -130,7 +138,11 @@ class ScraperClient:
             assert content_type is not None
             if not any(s in content_type.lower() for s in ("html", "text")):
                 raise InvalidContentTypeFailure(message=f"Received {content_type}, was expecting text")
-            text = await response.text()
+            try:
+                text = await response.text()
+            except UnicodeDecodeError:
+                # Handle binary or non-UTF-8 encoded responses
+                text = await response.text(encoding='utf-8', errors='replace')
             return BeautifulSoup(text, 'html.parser'), URL(response.url)
 
     @limiter
@@ -157,7 +169,11 @@ class ScraperClient:
             except DDOSGuardFailure:
                 response_text = await self.flaresolverr(domain, url)
                 return response_text
-            text = await response.text()
+            try:
+                text = await response.text()
+            except UnicodeDecodeError:
+                # Handle binary or non-UTF-8 encoded responses
+                text = await response.text(encoding='utf-8', errors='replace')
             return text
 
     @limiter
