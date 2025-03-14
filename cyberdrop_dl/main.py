@@ -11,7 +11,7 @@ from cyberdrop_dl.managers.manager import Manager
 from cyberdrop_dl.scraper.scraper import ScrapeMapper
 from cyberdrop_dl.ui.ui import program_ui
 from cyberdrop_dl.utils.sorting import Sorter
-from cyberdrop_dl.utils.utilities import check_latest_pypi, log_with_color, check_partials_and_empty_folders, log
+from cyberdrop_dl.utils.utilities import check_latest_pypi, log_with_color, check_partials_and_empty_folders, log, print_download_progress, print_file_progress
 
 
 def startup() -> Manager:
@@ -110,7 +110,16 @@ async def director(manager: Manager) -> None:
                     with Live(manager.progress_manager.layout, refresh_per_second=manager.config_manager.global_settings_data['UI_Options']['refresh_rate']):
                         await runtime(manager)
                 else:
-                    await runtime(manager)
+                    # Create a task to periodically print progress when using --no-ui
+                    await log_with_color("Running in no-ui mode with progress updates...", "cyan", 20)
+                    progress_task = asyncio.create_task(periodic_progress_updates(manager))
+                    
+                    try:
+                        await runtime(manager)
+                    finally:
+                        progress_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await progress_task
             except Exception as e:
                 print("\nAn error occurred, please report this to the developer")
                 print(e)
@@ -149,6 +158,21 @@ async def director(manager: Manager) -> None:
     await manager.close()
 
     await log_with_color("\nFinished downloading. Enjoy :)", 'green', 20)
+
+
+async def periodic_progress_updates(manager: Manager) -> None:
+    """Periodically prints download progress updates to the console"""
+    refresh_rate = manager.config_manager.global_settings_data['UI_Options']['refresh_rate']
+    update_interval = max(5, 60 / refresh_rate)  # At least 5 seconds between updates, but respect refresh rate
+    
+    await asyncio.sleep(2)  # Initial delay to let scraping start
+    
+    while True:
+        # Print a separator line to distinguish between updates
+        await log_with_color("----------------------------------------", "white", 20)
+        await print_download_progress(manager)
+        await print_file_progress(manager)
+        await asyncio.sleep(update_interval)
 
 
 def main():

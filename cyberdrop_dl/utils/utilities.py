@@ -119,6 +119,72 @@ async def log_with_color(message: str, style: str, level: int) -> None:
     rich.print(f"[{style}]{message}[/{style}]")
 
 
+async def print_download_progress(manager: 'Manager') -> None:
+    """Periodically prints download progress information to the console when using --no-ui option"""
+    try:
+        total_files = manager.progress_manager.download_progress.total_files
+        completed = manager.progress_manager.download_progress.completed_files
+        previously_completed = manager.progress_manager.download_progress.previously_completed_files
+        skipped = manager.progress_manager.download_progress.skipped_files
+        failed = manager.progress_manager.download_progress.failed_files
+        
+        in_progress = total_files - (completed + previously_completed + skipped + failed)
+        
+        # Only print progress if there are files to download
+        if total_files > 0:
+            progress_percentage = ((completed + previously_completed + skipped) / total_files) * 100 if total_files > 0 else 0
+            
+            await log_with_color(
+                f"Progress: [{completed + previously_completed + skipped}/{total_files}] {progress_percentage:.2f}% - "
+                f"Completed: {completed}, Previously: {previously_completed}, Skipped: {skipped}, Failed: {failed}, In Progress: {in_progress}",
+                "cyan", 20
+            )
+    except Exception as e:
+        await log(f"Error printing progress: {e}", 40)
+
+
+async def print_file_progress(manager: 'Manager') -> None:
+    """Prints information about currently downloading files"""
+    try:
+        # Get active download tasks
+        active_tasks = []
+        for task_id in manager.progress_manager.file_progress.visible_tasks + manager.progress_manager.file_progress.invisible_tasks:
+            if task_id not in manager.progress_manager.file_progress.completed_tasks:
+                task = manager.progress_manager.file_progress.progress.tasks[task_id]
+                if task.total > 0:  # Only include tasks with a known total size
+                    percentage = (task.completed / task.total) * 100 if task.total > 0 else 0
+                    speed = task.speed if hasattr(task, 'speed') else "N/A"
+                    active_tasks.append({
+                        "description": task.description,
+                        "completed": task.completed,
+                        "total": task.total,
+                        "percentage": percentage,
+                        "speed": speed
+                    })
+        
+        # Print information about active downloads (limit to 3 to avoid flooding the console)
+        if active_tasks:
+            await log_with_color("Currently downloading:", "yellow", 20)
+            for i, task in enumerate(active_tasks[:3]):  # Limit to 3 files
+                completed_mb = task["completed"] / (1024 * 1024)
+                total_mb = task["total"] / (1024 * 1024)
+                
+                # Create a simple text-based progress bar
+                bar_length = 20
+                filled_length = int(bar_length * task["percentage"] / 100)
+                bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                
+                await log_with_color(
+                    f"  {task['description']}: {bar} {completed_mb:.2f}MB / {total_mb:.2f}MB ({task['percentage']:.2f}%)",
+                    "yellow", 20
+                )
+            
+            if len(active_tasks) > 3:
+                await log_with_color(f"  ... and {len(active_tasks) - 3} more files", "yellow", 20)
+    except Exception as e:
+        await log(f"Error printing file progress: {e}", 40)
+
+
 """~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"""
 
 
