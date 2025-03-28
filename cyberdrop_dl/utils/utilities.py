@@ -223,18 +223,31 @@ async def sanitize_folder(title: str) -> str:
 
 async def get_filename_and_ext(filename: str, forum: bool = False) -> Tuple[str, str]:
     """Returns the filename and extension of a given file, throws NoExtensionFailure if there is no extension"""
+    print(f"[GET_FILENAME_EXT] Starting with filename: '{filename}'")
+    if not filename:
+        print(f"[GET_FILENAME_EXT] Empty filename provided")
+        raise NoExtensionFailure()
+    
     filename_parts = filename.rsplit('.', 1)
+    print(f"[GET_FILENAME_EXT] Filename parts after splitting on last dot: {filename_parts}")
     if len(filename_parts) == 1:
+        print(f"[GET_FILENAME_EXT] No extension found in filename (no dot)")
         raise NoExtensionFailure()
     if filename_parts[-1].isnumeric() and forum:
+        print(f"[GET_FILENAME_EXT] Forum mode and numeric extension, trying to split on last dash")
         filename_parts = filename_parts[0].rsplit('-', 1)
+        print(f"[GET_FILENAME_EXT] New filename parts: {filename_parts}")
     if len(filename_parts[-1]) > 5:
+        print(f"[GET_FILENAME_EXT] Extension too long (> 5 chars): {filename_parts[-1]}")
         raise NoExtensionFailure()
     ext = "." + filename_parts[-1].lower()
+    print(f"[GET_FILENAME_EXT] Extension: {ext}")
     filename = filename_parts[0][:MAX_NAME_LENGTHS['FILE']] if len(filename_parts[0]) > MAX_NAME_LENGTHS['FILE'] else filename_parts[0]
     filename = filename.strip()
     filename = filename.rstrip(".")
+    print(f"[GET_FILENAME_EXT] Base filename after processing: {filename}")
     filename = await sanitize(filename + ext)
+    print(f"[GET_FILENAME_EXT] Sanitized final result: {filename}, extension: {ext}")
     return filename, ext
 
 
