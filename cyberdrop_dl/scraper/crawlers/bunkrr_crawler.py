@@ -629,19 +629,52 @@ class BunkrrCrawler(Crawler):
         content = str(soup)
         
         # First priority: Check for direct gigachad-cdn URL pattern in the entire HTML
-        gigachad_match = re.search(r'(https?://mlk-bk\.cdn\.gigachad-cdn\.ru/[^"\']+?\.mp4)', content)
-        if gigachad_match:
-            video_url = URL(gigachad_match.group(1))
-            print(f"[EXTRACT_SCRIPT] Found gigachad-cdn URL in HTML content: {video_url}")
-            return video_url
-    
+        # More comprehensive pattern to match any subdomain structure for gigachad-cdn
+        gigachad_patterns = [
+            # Standard pattern with .cdn. in the middle
+            r'(https?://[^"\']+\.cdn\.gigachad-cdn\.ru/[^"\']+?\.mp4)',
+            # Alternative pattern with just gigachad-cdn.ru
+            r'(https?://[^"\']+\.gigachad-cdn\.ru/[^"\']+?\.mp4)',
+            # Catch-all pattern for any URL with gigachad-cdn
+            r'(https?://[^"\'\s]+gigachad-cdn[^"\'\s]+\.mp4)'
+        ]
         
-        # Third priority: Extract from source element in the raw HTML
-        source_match = re.search(r'<source src="([^"]+?\.mp4)"', content)
-        if source_match:
-            video_url = URL(source_match.group(1))
-            print(f"[EXTRACT_SCRIPT] Found source element in HTML content: {video_url}")
-            return video_url
+        for pattern in gigachad_patterns:
+            matches = re.findall(pattern, content)
+            if matches:
+                video_url = URL(matches[0])
+                print(f"[EXTRACT_SCRIPT] Found gigachad-cdn URL in HTML content with pattern {pattern}: {video_url}")
+                return video_url
+        
+        # Second priority: Extract from source element in the raw HTML
+        source_patterns = [
+            r'<source\s+src="([^"]+?\.mp4)"',
+            r'<source\s+src=\'([^\']+?\.mp4)\'',
+            r'<source\s+.*?src="([^"]+?\.mp4)"',
+            r'source\.src\s*=\s*["\']([^"\']+?\.mp4)["\']'
+        ]
+        
+        for pattern in source_patterns:
+            matches = re.findall(pattern, content)
+            if matches:
+                video_url = URL(matches[0])
+                print(f"[EXTRACT_SCRIPT] Found source element in HTML content with pattern {pattern}: {video_url}")
+                return video_url
+        
+        # Third priority: Look for data attributes containing video URLs
+        data_patterns = [
+            r'data-src="([^"]+?\.mp4)"',
+            r'data-video="([^"]+?\.mp4)"',
+            r'data-url="([^"]+?\.mp4)"',
+            r'data-source="([^"]+?\.mp4)"'
+        ]
+        
+        for pattern in data_patterns:
+            matches = re.findall(pattern, content)
+            if matches:
+                video_url = URL(matches[0])
+                print(f"[EXTRACT_SCRIPT] Found video URL in data attribute with pattern {pattern}: {video_url}")
+                return video_url
         
         # Fourth priority: Check scripts for direct video URLs
         for script in soup.select('script'):
@@ -649,13 +682,16 @@ class BunkrrCrawler(Crawler):
                 continue
                 
             # Check for gigachad-cdn pattern in scripts
-            if 'gigachad-cdn.ru' in script.string:
+            if 'gigachad-cdn' in script.string:
                 print("[EXTRACT_SCRIPT] Found script with gigachad-cdn reference")
-                matches = re.findall(r'(https?://[^"\']+?gigachad-cdn\.ru/[^"\']+?\.mp4)', script.string)
-                if matches:
-                    video_url = URL(matches[0])
-                    print(f"[EXTRACT_SCRIPT] Extracted gigachad-cdn video URL: {video_url}")
-                    return video_url
+                
+                # Try all patterns
+                for pattern in gigachad_patterns:
+                    matches = re.findall(pattern, script.string)
+                    if matches:
+                        video_url = URL(matches[0])
+                        print(f"[EXTRACT_SCRIPT] Extracted gigachad-cdn video URL: {video_url}")
+                        return video_url
             
             # Look for any mp4 URL in scripts
             if '.mp4' in script.string:
@@ -666,50 +702,38 @@ class BunkrrCrawler(Crawler):
                     print(f"[EXTRACT_SCRIPT] Extracted generic video URL: {video_url}")
                     return video_url
         
-        # Fifth priority: Extract from meta tags and try to construct the URL
-        meta_image = soup.select_one('meta[property="og:image"]')
-        if meta_image and meta_image.get('content'):
-            image_url = meta_image.get('content')
-            print(f"[EXTRACT_SCRIPT] Found meta image: {image_url}")
-            
-            # Try to extract identifier from meta image URL
-            id_match = re.search(r'([^/]+)-([a-zA-Z0-9]+)\.png$', image_url)
-            if id_match:
-                base_name = id_match.group(1)
-                identifier = id_match.group(2)
-                
-                # Prioritize gigachad-cdn URL
-                video_url = URL(f"https://mlk-bk.cdn.gigachad-cdn.ru/{base_name}-{identifier}.mp4")
-                print(f"[EXTRACT_SCRIPT] Constructed gigachad-cdn URL from meta image: {video_url}")
-                return video_url
+        # Check script data attributes
+        for script in soup.select('script[data-video], script[data-src], script[data-url], script[data-source], script[data-player]'):
+            for attr in ['data-video', 'data-src', 'data-url', 'data-source', 'data-player']:
+                value = script.get(attr)
+                if value and '.mp4' in value:
+                    video_url = URL(value)
+                    print(f"[EXTRACT_SCRIPT] Found video URL in script {attr}: {video_url}")
+                    return video_url
         
-        # Sixth priority: Look for video elements with data-poster
+        # Look for direct source elements in video tags
         video_tags = soup.select('video')
         for video in video_tags:
-            # Try data-poster attribute first
-            poster = video.get('data-poster') or video.get('poster')
-            if poster and 'thumbs' in poster:
-                print(f"[EXTRACT_SCRIPT] Found poster: {poster}")
-                try:
-                    # Extract identifier from poster
-                    id_match = re.search(r'([^/]+)-([a-zA-Z0-9]+)\.png$', poster)
-                    if id_match:
-                        base_name = id_match.group(1)
-                        identifier = id_match.group(2)
-                        
-                        # Try constructing gigachad-cdn URL directly
-                        video_url = URL(f"https://mlk-bk.cdn.gigachad-cdn.ru/{base_name}-{identifier}.mp4")
-                        print(f"[EXTRACT_SCRIPT] Constructed gigachad-cdn URL from poster: {video_url}")
-                        return video_url
-                    else:
-                        # Alternative transformation
-                        video_url_str = poster.replace('thumbs/', '').replace('_grid.png', '.mp4')
-                        if '://' in video_url_str:  # Ensure it's a complete URL
-                            video_url = URL(video_url_str)
-                            print(f"[EXTRACT_SCRIPT] Transformed poster to video URL: {video_url}")
-                            return video_url
-                except Exception as e:
-                    print(f"[EXTRACT_SCRIPT] Error constructing URL from poster: {e}")
+            source = video.select_one('source')
+            if source and source.get('src'):
+                video_url = URL(source.get('src'))
+                print(f"[EXTRACT_SCRIPT] Found direct source in video element: {video_url}")
+                return video_url
+            
+            # Check video element data attributes
+            for attr in ['data-src', 'src']:
+                value = video.get(attr)
+                if value and '.mp4' in value:
+                    video_url = URL(value)
+                    print(f"[EXTRACT_SCRIPT] Found video URL in video {attr}: {video_url}")
+                    return video_url
+        
+        # Last resort: check for raw mp4 URLs anywhere in the HTML
+        raw_mp4_urls = re.findall(r'https?://[^"\'\s<>]+\.mp4', content)
+        if raw_mp4_urls:
+            video_url = URL(raw_mp4_urls[0])
+            print(f"[EXTRACT_SCRIPT] Found raw mp4 URL in HTML: {video_url}")
+            return video_url
         
         print("[EXTRACT_SCRIPT] No video URLs found in scripts or HTML")
         return None
@@ -1021,7 +1045,9 @@ class BunkrrCrawler(Crawler):
                         "ramen.bunkr.ru", "pizza.bunkr.ru", "burger.bunkr.ru", 
                         "fries.bunkr.ru", "meatballs.bunkr.ru", "milkshake.bunkr.ru",
                         "kebab.bunkr.ru", "taquito.bunkr.ru", "soup.bunkr.ru",
-                        "mlk-bk.cdn.gigachad-cdn.ru"
+                        "mlk-bk.cdn.gigachad-cdn.ru", "brg-bk.cdn.gigachad-cdn.ru", 
+                        "c1-st.cdn.gigachad-cdn.ru", "f-c1.cdn.gigachad-cdn.ru", 
+                        "k1-cd.cdn.gigachad-cdn.ru"
                     ]
                     
                     # Try each CDN with UUID
@@ -1091,7 +1117,9 @@ class BunkrrCrawler(Crawler):
                     "ramen.bunkr.ru", "pizza.bunkr.ru", "burger.bunkr.ru", 
                     "fries.bunkr.ru", "meatballs.bunkr.ru", "milkshake.bunkr.ru",
                     "kebab.bunkr.ru", "taquito.bunkr.ru", "soup.bunkr.ru",
-                    "mlk-bk.cdn.gigachad-cdn.ru"
+                    "mlk-bk.cdn.gigachad-cdn.ru", "brg-bk.cdn.gigachad-cdn.ru", 
+                    "c1-st.cdn.gigachad-cdn.ru", "f-c1.cdn.gigachad-cdn.ru", 
+                    "k1-cd.cdn.gigachad-cdn.ru"
                 ]
                 
                 # Try each CDN with file_id
@@ -1350,7 +1378,9 @@ class BunkrrCrawler(Crawler):
                     "ramen.bunkr.ru", "pizza.bunkr.ru", "burger.bunkr.ru", 
                     "fries.bunkr.ru", "meatballs.bunkr.ru", "milkshake.bunkr.ru",
                     "kebab.bunkr.ru", "taquito.bunkr.ru", "soup.bunkr.ru",
-                    "mlk-bk.cdn.gigachad-cdn.ru"
+                    "mlk-bk.cdn.gigachad-cdn.ru", "brg-bk.cdn.gigachad-cdn.ru", 
+                    "c1-st.cdn.gigachad-cdn.ru", "f-c1.cdn.gigachad-cdn.ru", 
+                    "k1-cd.cdn.gigachad-cdn.ru"
                 ]
                 
                 # Try each CDN
@@ -1436,7 +1466,9 @@ class BunkrrCrawler(Crawler):
                                 "ramen.bunkr.ru", "pizza.bunkr.ru", "burger.bunkr.ru", 
                                 "fries.bunkr.ru", "meatballs.bunkr.ru", "milkshake.bunkr.ru",
                                 "kebab.bunkr.ru", "taquito.bunkr.ru", "soup.bunkr.ru",
-                                "mlk-bk.cdn.gigachad-cdn.ru"
+                                "mlk-bk.cdn.gigachad-cdn.ru", "brg-bk.cdn.gigachad-cdn.ru", 
+                                "c1-st.cdn.gigachad-cdn.ru", "f-c1.cdn.gigachad-cdn.ru", 
+                                "k1-cd.cdn.gigachad-cdn.ru"
                             ]
                             
                             for cdn in cdn_domains:
@@ -1472,7 +1504,9 @@ class BunkrrCrawler(Crawler):
                         "ramen.bunkr.ru", "pizza.bunkr.ru", "burger.bunkr.ru", 
                         "fries.bunkr.ru", "meatballs.bunkr.ru", "milkshake.bunkr.ru",
                         "kebab.bunkr.ru", "taquito.bunkr.ru", "soup.bunkr.ru",
-                        "mlk-bk.cdn.gigachad-cdn.ru"
+                        "mlk-bk.cdn.gigachad-cdn.ru", "brg-bk.cdn.gigachad-cdn.ru", 
+                        "c1-st.cdn.gigachad-cdn.ru", "f-c1.cdn.gigachad-cdn.ru", 
+                        "k1-cd.cdn.gigachad-cdn.ru"
                     ]
                     
                     for cdn in cdn_domains:
@@ -1534,7 +1568,9 @@ class BunkrrCrawler(Crawler):
             "kebab", "i-kebab", "taquito", "i-taquito", "soup", "i-soup",
             "cdn-wiener", "cdn-ramen", "cdn-pizza", "cdn-burger", "cdn-meatballs", 
             "cdn-milkshake", "cdn-kebab", "cdn-taquito", "cdn-soup", "cdn-nachos",
-            "cdn-fries", "cdn-wings", "cdn", "c", "media-files", "mlk-bk.cdn.gigachad-cdn"
+            "cdn-fries", "cdn-wings", "cdn", "c", "media-files", 
+            "mlk-bk.cdn.gigachad-cdn", "brg-bk.cdn.gigachad-cdn", 
+            "c1-st.cdn.gigachad-cdn", "f-c1.cdn.gigachad-cdn", "k1-cd.cdn.gigachad-cdn"
         ]
         
         if not url.host:
