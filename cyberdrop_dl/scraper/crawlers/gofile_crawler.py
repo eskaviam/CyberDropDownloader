@@ -22,7 +22,7 @@ class GoFileCrawler(Crawler):
     def __init__(self, manager: Manager):
         super().__init__(manager, "gofile", "GoFile")
         self.api_address = URL("https://api.gofile.io")
-        self.js_address = URL("https://gofile.io/dist/js/global.js")
+        self.js_address = URL("https://gofile.io/dist/js/config.js")
         self.primary_base_domain = URL("https://gofile.io")
         self.token = ""
         self.websiteToken = ""
