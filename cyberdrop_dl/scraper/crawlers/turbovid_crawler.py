@@ -46,20 +46,18 @@ class TurbovidCrawler(Crawler):
             'accept': '*/*',
         }
         
-        cookies = {
-            'captcha_verified': '1',
-        }
+        self.manager.client_manager.cookies.update_cookies(
+            {'captcha_verified': '1'}, 
+            response_url=URL("https://turbovid.cr")
+        )
 
-        async with self.manager.client_manager.session.get(
+        data = await self.client.get_json(
+            self.domain, 
             api_url, 
             params=params, 
-            headers=headers, 
-            cookies=cookies
-        ) as response:
-            response.raise_for_status()
-            data = await response.json()
+            headers_inc=headers
+        )
 
-        # 4. Handle Response
         if not data.get("success"):
             await self.manager.log_manager.error(f"Turbovid API error: {data} for {scrape_item.url}")
             return
