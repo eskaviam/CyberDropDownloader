@@ -13,7 +13,7 @@ class SupportedDomains:
                                                   "leakedmodels", "mediafire", "nudostar.com", "nudostar.tv",
                                                   "omegascans", "pimpandhost", "pixeldrain", "postimg", "realbooru", 
                                                   "reddit", "redd.it", "redgifs", "rule34.xxx", "rule34.xyz", "rule34vault", "saint",
-                                                  "scrolller", "simpcity", "socialmediagirls", "toonily", "xbunker",
+                                                  "scrolller", "simpcity", "socialmediagirls", "toonily", "turbovid", "xbunker",
                                                   "xbunkr")
 
     supported_forums: ClassVar[Tuple[str, ...]] = ("celebforum.to", "f95zone.to", "leakedmodels.com", "nudostar.com",
