@@ -248,6 +248,7 @@ class ScrapeMapper:
         """Creates a Turbovid Crawler instance"""
         from cyberdrop_dl.scraper.crawlers.turbovid_crawler import TurbovidCrawler
         self.existing_crawlers['turbovid'] = TurbovidCrawler(self.manager)
+        self.existing_crawlers['turbo.cr'] = self.existing_crawlers['turbovid']
 
     async def xbunker(self) -> None:
         """Creates a XBunker Crawler instance"""
