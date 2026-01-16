@@ -34,7 +34,8 @@ class TurbovidCrawler(Crawler):
         else:
             embed_url = scrape_item.url
 
-        api_url = URL("https://turbovid.cr/api/sign")
+        # Dynamically set the API URL based on the incoming domain (turbovid.cr or turbo.cr)
+        api_url = URL(f"https://{scrape_item.url.host}/api/sign")
         
         params = {
             'v': video_id,
@@ -48,7 +49,7 @@ class TurbovidCrawler(Crawler):
         
         self.manager.client_manager.cookies.update_cookies(
             {'captcha_verified': '1'}, 
-            response_url=URL("https://turbovid.cr")
+            response_url=URL(f"https://{scrape_item.url.host}")
         )
 
         data = await self.client.get_json(
