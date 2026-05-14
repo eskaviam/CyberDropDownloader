@@ -14,7 +14,13 @@ if TYPE_CHECKING:
     from cyberdrop_dl.managers.manager import Manager
 
 
-DOWNLOAD_SELECTOR = 'a.btn[href*="md5="]'
+DOWNLOAD_SELECTORS = (
+    'a.btn[href*="md5="]',
+    'a.btn-main[download][href]',
+    'a[download][href*="md5="]',
+    'video source[src*="md5="]',
+    'img[src*="md5="]',
+)
 HOMEPAGE_CATCHALL_FILE = "/s21/FHVZKQyAZlIsrneDAsp.jpeg"
 
 
@@ -46,11 +52,12 @@ class FileditchCrawler(Crawler):
         async with self.request_limiter:
             soup = await self.client.get_BS4(self.domain, scrape_item.url)
 
-        link_container = soup.select_one(DOWNLOAD_SELECTOR)
-        if not link_container or not link_container.get("href"):
+        link = self._get_download_link(soup, scrape_item.url)
+        if not link:
+            if self._has_turnstile_challenge(soup):
+                raise ScrapeFailure(403, "Fileditch requires Cloudflare Turnstile verification")
             raise ScrapeFailure(422, "Fileditch download link not found")
 
-        link = self._absolute_url(link_container.get("href"), scrape_item.url)
         if link.path == HOMEPAGE_CATCHALL_FILE:
             raise ScrapeFailure(422, "Fileditch returned homepage catchall file")
 
@@ -73,3 +80,18 @@ class FileditchCrawler(Crawler):
         if href.startswith("http"):
             return URL(href)
         return base_url.join(URL(href))
+
+    def _get_download_link(self, soup, base_url: URL) -> URL | None:
+        for selector in DOWNLOAD_SELECTORS:
+            link_container = soup.select_one(selector)
+            if not link_container:
+                continue
+
+            href = link_container.get("href") or link_container.get("src")
+            if href:
+                return self._absolute_url(href, base_url)
+
+        return None
+
+    def _has_turnstile_challenge(self, soup) -> bool:
+        return bool(soup.select_one(".cf-turnstile, form#ts-form"))
