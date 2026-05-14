@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+import base64
 import datetime
 import re
 from typing import TYPE_CHECKING, Tuple, Optional
@@ -20,10 +21,103 @@ if TYPE_CHECKING:
 class BunkrrCrawler(Crawler):
     def __init__(self, manager: Manager):
         super().__init__(manager, "bunkrr", "Bunkrr")
-        self.primary_base_domain = URL("https://bunkr.sk")
+        self.primary_base_domain = URL("https://bunkr.cr")
+        self.download_api = URL("https://apidl.bunkr.ru/api/_001_v2")
         self.request_limiter = AsyncLimiter(10, 1)
 
     """~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"""
+
+    def _absolute_url(self, href: str, base_url: URL) -> URL:
+        if href.startswith("/"):
+            relative_url = URL(href)
+            return base_url.with_path(relative_url.path).with_query(relative_url.query)
+        return URL(href)
+
+    def _image_url_from_page(self, soup) -> Optional[URL]:
+        for img in soup.select('figure img[src], img[src]'):
+            image_src = img.get('src')
+            if not image_src:
+                continue
+            class_list = img.get('class') or []
+            class_text = " ".join(class_list) if isinstance(class_list, list) else str(class_list)
+            if "blur" in class_text or image_src.startswith("/images/"):
+                continue
+            image_url = URL(image_src)
+            if image_url.suffix.lower() in FILE_FORMATS['Images']:
+                return image_url
+
+        meta_image = soup.select_one('meta[property="og:image"]')
+        if meta_image and meta_image.get('content'):
+            image_url_str = meta_image.get('content')
+            if 'thumbs' in image_url_str:
+                image_url_str = image_url_str.replace('/thumbs/', '/')
+                if image_url_str.endswith('.png'):
+                    image_url_str = image_url_str[:-4]
+            image_url = URL(image_url_str)
+            if image_url.suffix.lower() in FILE_FORMATS['Images']:
+                return image_url
+
+        return None
+
+    def _filename_from_page(self, soup, fallback: str = "file") -> str:
+        title_tag = soup.select_one('h1') or soup.select_one('title')
+        if title_tag:
+            title = title_tag.text.strip()
+            if title.lower().startswith("download "):
+                title = title[9:].strip()
+            if "|" in title:
+                title = title.split("|")[0].strip()
+            if title:
+                return title
+
+        for script in soup.select('script'):
+            script_text = script.string or script.text
+            if not script_text:
+                continue
+            match = re.search(r'var\s+ogname\s*=\s*["\']([^"\']+)["\']', script_text)
+            if match:
+                return match.group(1)
+
+        return fallback
+
+    async def _get_bunkr_api_download(self, file_id: str, filename: Optional[str] = None) -> Optional[URL]:
+        if not file_id:
+            return None
+
+        response = await self.client.post_json(
+            self.domain,
+            self.download_api,
+            data={"id": file_id},
+            headers_inc={"Content-Type": "application/json"},
+        )
+
+        encrypted_url = response.get("url")
+        timestamp = response.get("timestamp")
+        if not encrypted_url or not timestamp:
+            return None
+
+        if response.get("encrypted") is False:
+            decrypted = encrypted_url
+        else:
+            key = f"SECRET_KEY_{int(timestamp) // 3600}".encode()
+            encrypted_bytes = base64.b64decode(encrypted_url)
+            decrypted = bytes(
+                value ^ key[index % len(key)]
+                for index, value in enumerate(encrypted_bytes)
+            ).decode()
+
+        download_url = URL(decrypted)
+        if filename:
+            download_url = download_url.update_query(n=filename)
+        return download_url
+
+    async def _extract_api_download_from_page(self, soup) -> Optional[URL]:
+        download_button = soup.select_one('#download-btn[data-id]')
+        if not download_button:
+            return None
+
+        filename = self._filename_from_page(soup)
+        return await self._get_bunkr_api_download(download_button.get("data-id"), filename)
 
     async def fetch(self, scrape_item: ScrapeItem) -> None:
         task_id = await self.scraping_progress.add_task(scrape_item.url)
@@ -121,7 +215,7 @@ class BunkrrCrawler(Crawler):
                 print(f"[ALBUM] Found link: {link}")
                 
                 if link.startswith("/"):
-                    link = URL("https://" + scrape_item.url.host + link)
+                    link = self._absolute_url(link, scrape_item.url)
                     print(f"[ALBUM] Converted relative link to absolute: {link}")
                 else:
                     link = URL(link)
@@ -185,6 +279,7 @@ class BunkrrCrawler(Crawler):
         selectors = [
             "a[class*=ic-download-01]",
             "a[href*='get.bunkrr.su/file/']",
+            "a[href*='get.bunkr'][href*='/file/']",
             "a[class*='btn-main'][href*='get.bunkrr']",
             "a[class*='download']",
             "a[href*='.mp4']"
@@ -338,7 +433,7 @@ class BunkrrCrawler(Crawler):
             is_video = True
         
         # Check for download button with video-like URL
-        download_link = soup.select_one('a[href*="get.bunkrr.su/file/"]')
+        download_link = soup.select_one('a[href*="get.bunkr"][href*="/file/"]')
         if download_link:
             print("[OTHER] Found download link to get.bunkrr.su")
             is_video = True
@@ -378,34 +473,24 @@ class BunkrrCrawler(Crawler):
                 return
         
         # If we get here, check if it's an image file
-        img_tags = soup.select('figure img[src*="bunkr.ru"]')
-        if img_tags:
+        image_url = self._image_url_from_page(soup)
+        if image_url:
             print("[OTHER] Found image content")
-            # Use the main image (not the blurred background one)
-            for img in img_tags:
-                if 'blur' not in img.get('class', '') and not img.get('src', '').endswith('thumbs/'):
-                    image_url = URL(img.get('src'))
-                    print(f"[OTHER] Found direct image URL: {image_url}")
-                    
-                    try:
-                        filename, ext = await get_filename_and_ext(image_url.name)
-                        print(f"[OTHER] Extracted filename from image URL: {filename}, ext: {ext}")
-                    except NoExtensionFailure:
-                        # Try to get filename from page title
-                        title_tag = soup.select_one('h1')
-                        if title_tag:
-                            title_text = title_tag.text.strip()
-                            print(f"[OTHER] Using page title for filename: {title_text}")
-                            try:
-                                filename, ext = await get_filename_and_ext(title_text)
-                            except NoExtensionFailure:
-                                # If no extension in title, get it from URL
-                                filename = title_text
-                                ext = ".webp" if ".webp" in title_text else ".jpg"
-                                
-                print(f"[OTHER] Downloading image with filename: {filename}{ext}")
-                await self.handle_file(image_url, scrape_item, filename, ext)
-                return
+            try:
+                filename, ext = await get_filename_and_ext(image_url.name)
+                print(f"[OTHER] Extracted filename from image URL: {filename}, ext: {ext}")
+            except NoExtensionFailure:
+                title_text = self._filename_from_page(soup, scrape_item.url.parts[-1])
+                print(f"[OTHER] Using page title for filename: {title_text}")
+                try:
+                    filename, ext = await get_filename_and_ext(title_text)
+                except NoExtensionFailure:
+                    filename = title_text
+                    ext = ".webp"
+
+            print(f"[OTHER] Downloading image with filename: {filename}{ext}")
+            await self.handle_file(image_url, scrape_item, filename, ext)
+            return
         
         # Check for meta image tags (often used for images)
         meta_image = soup.select_one('meta[property="og:image"]')
@@ -466,6 +551,7 @@ class BunkrrCrawler(Crawler):
         
         download_selectors = [
             'a[href*="get.bunkrr.su/file/"]',
+            'a[href*="get.bunkr"][href*="/file/"]',
             'a[class*="btn-main"][href*="get.bunkrr"]',
             'a[href*="get.bunkr"]',
             'a[class*="download"]',
@@ -791,40 +877,36 @@ class BunkrrCrawler(Crawler):
                 print("[EXTRACT_VIDEO] Title indicates this is an image file")
                 
                 # Look for image URLs in the page
-                img_tags = soup.select('figure img[src*="bunkr.ru"]')
-                if img_tags:
-                    # Use the main image (not the blurred background one)
-                    for img in img_tags:
-                        if 'blur' not in img.get('class', '') and not img.get('src', '').endswith('thumbs/'):
-                            image_url = URL(img.get('src'))
-                            print(f"[EXTRACT_VIDEO] Found direct image URL: {image_url}")
-                            
-                            try:
-                                filename, ext = await get_filename_and_ext(image_url.name)
-                                print(f"[EXTRACT_VIDEO] Extracted filename from URL: {filename}, ext: {ext}")
-                                return image_url, filename, ext
-                            except NoExtensionFailure:
-                                # Use title as filename
-                                try:
-                                    filename, ext = await get_filename_and_ext(title_text)
-                                    print(f"[EXTRACT_VIDEO] Using title as filename: {filename}, ext: {ext}")
-                                    return image_url, filename, ext
-                                except NoExtensionFailure:
-                                    # Determine extension from title text or URL
-                                    if '.webp' in title_text.lower():
-                                        ext = '.webp'
-                                    elif '.jpg' in title_text.lower() or '.jpeg' in title_text.lower():
-                                        ext = '.jpg'
-                                    elif '.png' in title_text.lower():
-                                        ext = '.png'
-                                    elif '.gif' in title_text.lower():
-                                        ext = '.gif'
-                                    else:
-                                        ext = '.webp'  # Default to webp
-                                    
-                                    filename = title_text
-                                    print(f"[EXTRACT_VIDEO] Using title with derived extension: {filename}, ext: {ext}")
-                                    return image_url, filename, ext
+                image_url = self._image_url_from_page(soup)
+                if image_url:
+                    print(f"[EXTRACT_VIDEO] Found direct image URL: {image_url}")
+
+                    try:
+                        filename, ext = await get_filename_and_ext(image_url.name)
+                        print(f"[EXTRACT_VIDEO] Extracted filename from URL: {filename}, ext: {ext}")
+                        return image_url, filename, ext
+                    except NoExtensionFailure:
+                        # Use title as filename
+                        try:
+                            filename, ext = await get_filename_and_ext(title_text)
+                            print(f"[EXTRACT_VIDEO] Using title as filename: {filename}, ext: {ext}")
+                            return image_url, filename, ext
+                        except NoExtensionFailure:
+                            # Determine extension from title text or URL
+                            if '.webp' in title_text.lower():
+                                ext = '.webp'
+                            elif '.jpg' in title_text.lower() or '.jpeg' in title_text.lower():
+                                ext = '.jpg'
+                            elif '.png' in title_text.lower():
+                                ext = '.png'
+                            elif '.gif' in title_text.lower():
+                                ext = '.gif'
+                            else:
+                                ext = '.webp'  # Default to webp
+
+                            filename = title_text
+                            print(f"[EXTRACT_VIDEO] Using title with derived extension: {filename}, ext: {ext}")
+                            return image_url, filename, ext
                 
                 # Try finding "enlarge image" link
                 enlarge_link = soup.select_one('a[href*="bunkr.ru"][href*=".webp"], a[href*="bunkr.ru"][href*=".jpg"], a[href*="bunkr.ru"][href*=".png"]')
@@ -988,6 +1070,14 @@ class BunkrrCrawler(Crawler):
                             video_url = URL(matches[0])
                             print(f"[EXTRACT_VIDEO] Extracted gigachad-cdn video URL from script: {video_url}")
                             return video_url, filename, ext
+
+            download_link = soup.select_one('a[href*="get.bunkr"][href*="/file/"]')
+            if download_link and download_link.get('href'):
+                download_url = self._absolute_url(download_link.get('href'), url)
+                print(f"[EXTRACT_VIDEO] Resolving current Bunkr download page: {download_url}")
+                resolved_url = await self.reinforced_link(download_url)
+                if resolved_url:
+                    return resolved_url, filename, ext
             
             # Try to find UUID in meta image tag first (preferred over file ID)
             uuid = None
@@ -1255,6 +1345,11 @@ class BunkrrCrawler(Crawler):
             print("[REINFORCED_LINK] Getting BS4 for URL")
             soup = await self.client.get_BS4(self.domain, url)
             print("[REINFORCED_LINK] Got BS4 successfully")
+
+        api_download_url = await self._extract_api_download_from_page(soup)
+        if api_download_url:
+            print(f"[REINFORCED_LINK] Resolved Bunkr API download URL: {api_download_url}")
+            return api_download_url
         
         # First, try to extract from scripts - most reliable for dynamically loaded content
         script_video_url = await self.extract_video_url_from_scripts(soup, url)
@@ -1294,15 +1389,13 @@ class BunkrrCrawler(Crawler):
             if any(ext in title_text for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
                 print("[REINFORCED_LINK] Title indicates this is an image file")
                 
-                # First try to find direct image links
-                for img in soup.select('figure img'):
-                    if not img.get('src', '').endswith('thumbs/'):
-                        image_url = URL(img.get('src'))
-                        print(f"[REINFORCED_LINK] Found direct image URL: {image_url}")
-                        return image_url
+                image_url = self._image_url_from_page(soup)
+                if image_url:
+                    print(f"[REINFORCED_LINK] Found direct image URL: {image_url}")
+                    return image_url
                 
                 # Try finding "enlarge image" link
-                enlarge_link = soup.select_one('a[href*="bunkr.ru"][href*=".webp"], a[href*="bunkr.ru"][href*=".jpg"], a[href*="bunkr.ru"][href*=".png"]')
+                enlarge_link = soup.select_one('a[href*=".webp"], a[href*=".jpg"], a[href*=".jpeg"], a[href*=".png"]')
                 if enlarge_link:
                     image_url = URL(enlarge_link.get('href'))
                     print(f"[REINFORCED_LINK] Found direct image URL from enlarge link: {image_url}")

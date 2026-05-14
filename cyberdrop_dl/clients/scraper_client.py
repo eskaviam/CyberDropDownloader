@@ -188,6 +188,20 @@ class ScraperClient:
                 return {}
 
     @limiter
+    async def post_json(self, domain: str, url: URL, client_session: ClientSession, data: Dict,
+                        headers_inc: Optional[Dict] = None) -> Dict:
+        """Returns a JSON object from the given URL when posting JSON data"""
+        headers = {**self._headers, **headers_inc} if headers_inc else self._headers
+        async with client_session.post(url, headers=headers, ssl=self.client_manager.ssl_context,
+                                       proxy=self.client_manager.proxy, json=data) as response:
+            await self.client_manager.check_http_status(response)
+            content_type = response.headers.get('Content-Type')
+            assert content_type is not None
+            if 'json' not in content_type.lower():
+                raise InvalidContentTypeFailure(message=f"Received {content_type}, was expecting JSON")
+            return await response.json()
+
+    @limiter
     async def get_head(self, domain: str, url: URL, client_session: ClientSession) -> CIMultiDictProxy[str]:
         """Returns the headers from the given URL"""
         async with client_session.head(url, headers=self._headers, ssl=self.client_manager.ssl_context,
