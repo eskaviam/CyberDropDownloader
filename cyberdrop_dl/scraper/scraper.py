@@ -26,7 +26,8 @@ class ScrapeMapper:
         self.manager = manager
         self.mapping = {"bunkrr": self.bunkrr, "celebforum": self.celebforum, "coomer": self.coomer,
                         "cyberdrop": self.cyberdrop, "cyberfile": self.cyberfile, "e-hentai": self.ehentai,
-                        "erome": self.erome, "fapello": self.fapello, "f95zone": self.f95zone, "gofile": self.gofile,
+                        "erome": self.erome, "fapello": self.fapello, "filester": self.filester,
+                        "f95zone": self.f95zone, "gofile": self.gofile,
                         "hotpic": self.hotpic, "ibb.co": self.imgbb, "imageban": self.imageban, "imgbox": self.imgbox,
                         "imgur": self.imgur, "img.kiwi": self.imgwiki, "jpg.church": self.jpgchurch,
                         "jpg.homes": self.jpgchurch, "jpg.fish": self.jpgchurch, "jpg.fishing": self.jpgchurch,
@@ -86,6 +87,11 @@ class ScrapeMapper:
         """Creates a Fappelo Crawler instance"""
         from cyberdrop_dl.scraper.crawlers.fapello_crawler import FapelloCrawler
         self.existing_crawlers['fapello'] = FapelloCrawler(self.manager)
+
+    async def filester(self) -> None:
+        """Creates a Filester Crawler instance"""
+        from cyberdrop_dl.scraper.crawlers.filester_crawler import FilesterCrawler
+        self.existing_crawlers['filester'] = FilesterCrawler(self.manager)
 
     async def f95zone(self) -> None:
         """Creates a F95Zone Crawler instance"""

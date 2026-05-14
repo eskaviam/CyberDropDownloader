@@ -41,12 +41,13 @@ class ClientManager:
             "bunkrr": AsyncLimiter(5, 1),
             "cyberdrop": AsyncLimiter(5, 1),
             "coomer": AsyncLimiter(1, 1),
+            "filester": AsyncLimiter(5, 1),
             "kemono": AsyncLimiter(1, 1),
             "pixeldrain": AsyncLimiter(10, 1),
             "other": AsyncLimiter(25, 1)
         }
         
-        self.download_spacer = {'bunkr': 0.5, 'bunkrr': 0.5, 'cyberdrop': 0, 'cyberfile': 0, "pixeldrain": 0, "coomer": 0.5, "kemono": 0.5}
+        self.download_spacer = {'bunkr': 0.5, 'bunkrr': 0.5, 'cyberdrop': 0, 'cyberfile': 0, "pixeldrain": 0, "coomer": 0.5, "filester": 0.5, "kemono": 0.5}
 
         self.global_rate_limiter = AsyncLimiter(self.rate_limit, 1)
         self.session_limit = asyncio.Semaphore(50)
